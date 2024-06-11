@@ -24,9 +24,13 @@
         #progress-bar-container {
             display: none;
         }
-        #download-button {
+        #download-button-container {
             display: none;
+            text-align: center;
             margin-top: 20px;
+        }
+        #download-button {
+            width: 100%;
         }
     </style>
 </head>
@@ -51,14 +55,16 @@
                                 <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
                             </div>
                         </div>
-                        <p id="download-button" href="#" class="btn btn-success mt-3" style ="margin:15px 0;">Download G-code</p>
+                        <div id="download-button-container">
+                            <a id="download-button" href="#" class="btn btn-success mt-3">Download G-code</a>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
     <div class="footer">
-        &copy; RAI6 happens here in FutureLab.
+        &copy; 2024 SVG to G-code Converter. All rights reserved.
     </div>
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
@@ -94,7 +100,8 @@
                             $('#progress-bar').removeClass('progress-bar-striped progress-bar-animated')
                                               .addClass('bg-success')
                                               .text('DONE ✓');
-                            $('#download-button').attr('href', response.download_url).show();
+                            $('#download-button-container').show();
+                            $('#download-button').attr('href', response.download_url);
                         }
                     }
                 });
