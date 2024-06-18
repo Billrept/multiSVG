@@ -3,14 +3,22 @@ import os
 import xml.etree.ElementTree as ET
 from zipfile import ZipFile
 import cairosvg
+from celery import Celery
+from celery_worker import make_celery
 
 app = Flask(__name__)
+app.config.update(
+    CELERY_BROKER_URL='redis://localhost:6379/0',
+    CELERY_RESULT_BACKEND='redis://localhost:6379/0'
+)
+celery = make_celery(app)
+
 UPLOAD_FOLDER = 'static/uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-def convert_svg_to_png(svg_file, OUTPUT_PNG):
-    cairosvg.svg2png(url=svg_file, write_to=OUTPUT_PNG)
-    return OUTPUT_PNG
+def convert_svg_to_png(svg_file, output_png):
+    cairosvg.svg2png(url=svg_file, write_to=output_png)
+    return output_png
 
 def separate_svg_layers(svg_file):
     tree = ET.parse(svg_file)
@@ -62,11 +70,13 @@ def path_to_gcode(path_data, color):
     gcode_lines.append(f"; End of path for color {color}\n")
     return gcode_lines
 
-def process_svg_to_gcode(file):
-    filepath = os.path.join(UPLOAD_FOLDER, file.filename)
-    file.save(filepath)
+@celery.task
+def process_svg_to_gcode(file_path, file_name):
+    filepath = file_path
+    file_name = file_name
     
-    png_filepath = os.path.join(UPLOAD_FOLDER, f'{os.path.splitext(file.filename)[0]}.png')
+    # Convert original SVG to PNG
+    png_filepath = os.path.join(UPLOAD_FOLDER, f'{os.path.splitext(file_name)[0]}.png')
     convert_svg_to_png(filepath, png_filepath)
     
     layers = separate_svg_layers(filepath)
@@ -81,8 +91,8 @@ def process_svg_to_gcode(file):
 
     zip_filepath = os.path.join(UPLOAD_FOLDER, 'files.zip')
     with ZipFile(zip_filepath, 'w') as zipf:
-        zipf.write(filepath, os.path.basename(filepath))
-        zipf.write(png_filepath, os.path.basename(png_filepath))
+        zipf.write(filepath, os.path.basename(filepath))  # Include original SVG file
+        zipf.write(png_filepath, os.path.basename(png_filepath))  # Include PNG file
         for gcode_filepath in gcode_filepaths:
             zipf.write(gcode_filepath, os.path.basename(gcode_filepath))
     
@@ -92,13 +102,41 @@ def process_svg_to_gcode(file):
 def index():
     if request.method == 'POST':
         if 'svg_file' not in request.files:
-            return "No file part", 400
+            return jsonify({'success': False, 'error': 'No file part'}), 400
         file = request.files['svg_file']
         if file.filename == '':
-            return "No selected file", 400
-        zip_filepath = process_svg_to_gcode(file)
-        return jsonify({'success': True, 'download_url_zip': f'/download/{os.path.basename(zip_filepath)}'})
+            return jsonify({'success': False, 'error': 'No selected file'}), 400
+        file_path = os.path.join(UPLOAD_FOLDER, file.filename)
+        file.save(file_path)
+        
+        task = process_svg_to_gcode.apply_async(args=[file_path, file.filename])
+        return jsonify({
+            'success': True,
+            'task_id': task.id
+        })
     return render_template('index.html')
+
+@app.route('/status/<task_id>')
+def task_status(task_id):
+    task = process_svg_to_gcode.AsyncResult(task_id)
+    if task.state == 'PENDING':
+        response = {
+            'state': task.state,
+            'status': 'Pending...'
+        }
+    elif task.state != 'FAILURE':
+        response = {
+            'state': task.state,
+            'status': task.info.get('status', '')
+        }
+        if 'result' in task.info:
+            response['result'] = task.info['result']
+    else:
+        response = {
+            'state': task.state,
+            'status': str(task.info)
+        }
+    return jsonify(response)
 
 @app.route('/download/<filename>')
 def download_file(filename):
