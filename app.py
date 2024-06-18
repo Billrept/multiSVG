@@ -1,12 +1,16 @@
 from flask import Flask, render_template, request, send_file, jsonify
 import os
-import cairosvg
 import xml.etree.ElementTree as ET
 from zipfile import ZipFile
+import cairosvg
 
 app = Flask(__name__)
 UPLOAD_FOLDER = 'static/uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+def convert_svg_to_png(svg_file, OUTPUT_PNG):
+    cairosvg.svg2png(url=svg_file, write_to=OUTPUT_PNG)
+    return OUTPUT_PNG
 
 def separate_svg_layers(svg_file):
     tree = ET.parse(svg_file)
@@ -29,11 +33,6 @@ def separate_svg_layers(svg_file):
         layer_paths.append((layer_id, layer_path))
     
     return layer_paths
-
-def convert_svg_to_png(filepath):
-    png_filepath = filepath.rsplit('.', 1)[0] + '.png'
-    cairosvg.svg2png(url=filepath, write_to=png_filepath)
-    return png_filepath
 
 def convert_svg_to_gcode(filepath, color):
     tree = ET.parse(filepath)
@@ -64,29 +63,29 @@ def path_to_gcode(path_data, color):
     return gcode_lines
 
 def process_svg_to_gcode(file):
-    filepath = os.path.join(UPLOAD_FOLDER, file.filename)
-    file.save(filepath)
-    layers = separate_svg_layers(filepath)
-    
-    gcode_filepaths = []
-    png_filepaths = []
-    for color, layer_path in layers:
-        gcode_lines = convert_svg_to_gcode(layer_path, color)
-        gcode_filepath = os.path.join(UPLOAD_FOLDER, f'{color}.gcode')
-        with open(gcode_filepath, 'w') as gcode_file:
-            gcode_file.writelines(gcode_lines)
-        gcode_filepaths.append(gcode_filepath)
-        
-        png_filepath = convert_svg_to_png(filepath)
-        png_filepaths.append(png_filepath)
-    
-    zip_filepath = os.path.join(UPLOAD_FOLDER, 'gcode_files.zip')
-    with ZipFile(zip_filepath, 'w') as zipf:
-        for gcode_filepath in gcode_filepaths:
-            zipf.write(gcode_filepath, os.path.basename(gcode_filepath))
-        for png_filepath in png_filepaths:
-            zipf.write(png_filepath, os.path.basename(png_filepath))
-    return zip_filepath
+	filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+	file.save(filepath)
+	layers = separate_svg_layers(filepath)
+	
+	gcode_filepaths = []
+	png_filepaths = []
+	for color, layer_path in layers:
+		gcode_lines = convert_svg_to_gcode(layer_path, color)
+		gcode_filepath = os.path.join(UPLOAD_FOLDER, f'{color}.gcode')
+		with open(gcode_filepath, 'w') as gcode_file:
+			gcode_file.writelines(gcode_lines)
+		gcode_filepaths.append(gcode_filepath)
+		
+	png_filepath = os.path.join(UPLOAD_FOLDER, 'files.zip')
+	convert_svg_to_png(filepath, png_filepath)
+	png_filepaths.append(png_filepath)
+	zip_filepath = os.path.join(UPLOAD_FOLDER, 'files.zip')
+	with ZipFile(zip_filepath, 'w') as zipf:
+		for gcode_filepath in gcode_filepaths:
+			zipf.write(gcode_filepath, os.path.basename(gcode_filepath))
+		for png_filepath in png_filepaths:
+			zipf.write(png_filepath, os.path.basename(png_filepath))
+	return zip_filepath
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -105,4 +104,4 @@ def download_file(filename):
     return send_file(os.path.join(UPLOAD_FOLDER, filename), as_attachment=True)
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000)
+    app.run(debug=True)
