@@ -77,7 +77,7 @@ def process_svg_to_gcode(file):
             gcode_file.writelines(gcode_lines)
         gcode_filepaths.append(gcode_filepath)
         
-        png_filepath = convert_svg_to_png(layer_path)
+        png_filepath = convert_svg_to_png(filepath)
         png_filepaths.append(png_filepath)
     
     zip_filepath = os.path.join(UPLOAD_FOLDER, 'gcode_files.zip')
