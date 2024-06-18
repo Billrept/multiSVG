@@ -21,8 +21,14 @@
             text-align: center;
             background-color: #f8f9fa;
         }
-        #progress-bar-container {
+        #processing-indicator-container {
             display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+        .spinner-border {
+            width: 3rem;
+            height: 3rem;
         }
         #download-button-container {
             display: none;
@@ -50,10 +56,11 @@
                             </div>
                             <button type="submit" class="btn btn-primary">Convert to G-code</button>
                         </form>
-                        <div id="progress-bar-container" class="mt-3">
-                            <div class="progress">
-                                <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                        <div id="processing-indicator-container" class="mt-3">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="sr-only">Processing...</span>
                             </div>
+                            <div>Processing...</div>
                         </div>
                         <div id="download-button-container">
                             <a id="download-button" href="#" class="btn btn-success mt-3">Download G-code</a>
@@ -65,4 +72,41 @@
     </div>
     <div class="footer">
         <p>Happens here in Future Lab.</p>
-    </div
+    </div>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            $('#upload-form').on('submit', function(e) {
+                e.preventDefault();
+                var formData = new FormData(this);
+
+                $('#processing-indicator-container').show();
+                $('#download-button-container').hide();
+
+                $.ajax({
+                    type: 'POST',
+                    url: '/',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: function(response) {
+                        $('#processing-indicator-container').hide();
+                        if (response.success) {
+                            $('#download-button-container').show();
+                            $('#download-button').attr('href', response.download_url_zip);
+                        } else {
+                            alert('Error converting SVG to G-code. Please try again.');
+                        }
+                    },
+                    error: function() {
+                        $('#processing-indicator-container').hide();
+                        alert('Error uploading file. Please try again.');
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
