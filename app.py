@@ -97,7 +97,7 @@ def index():
         if file.filename == '':
             return "No selected file", 400
         zip_filepath = process_svg_to_gcode(file)
-        return jsonify({'success': True, 'download_url': f'/download/{os.path.basename(zip_filepath)}'})
+        return jsonify({'success': True, 'download_url_zip': f'/download/{os.path.basename(zip_filepath)}'})
     return render_template('index.html')
 
 @app.route('/download/<filename>')
