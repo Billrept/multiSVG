@@ -63,29 +63,28 @@ def path_to_gcode(path_data, color):
     return gcode_lines
 
 def process_svg_to_gcode(file):
-	filepath = os.path.join(UPLOAD_FOLDER, file.filename)
-	file.save(filepath)
-	layers = separate_svg_layers(filepath)
-	
-	gcode_filepaths = []
-	png_filepaths = []
-	for color, layer_path in layers:
-		gcode_lines = convert_svg_to_gcode(layer_path, color)
-		gcode_filepath = os.path.join(UPLOAD_FOLDER, f'{color}.gcode')
-		with open(gcode_filepath, 'w') as gcode_file:
-			gcode_file.writelines(gcode_lines)
-		gcode_filepaths.append(gcode_filepath)
-		
-	png_filepath = os.path.join(UPLOAD_FOLDER, 'files.zip')
-	convert_svg_to_png(filepath, png_filepath)
-	png_filepaths.append(png_filepath)
-	zip_filepath = os.path.join(UPLOAD_FOLDER, 'files.zip')
-	with ZipFile(zip_filepath, 'w') as zipf:
-		for gcode_filepath in gcode_filepaths:
-			zipf.write(gcode_filepath, os.path.basename(gcode_filepath))
-		for png_filepath in png_filepaths:
-			zipf.write(png_filepath, os.path.basename(png_filepath))
-	return zip_filepath
+    filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+    file.save(filepath)
+    layers = separate_svg_layers(filepath)
+    
+    gcode_filepaths = []
+    for color, layer_path in layers:
+        gcode_lines = convert_svg_to_gcode(layer_path, color)
+        gcode_filepath = os.path.join(UPLOAD_FOLDER, f'{color}.gcode')
+        with open(gcode_filepath, 'w') as gcode_file:
+            gcode_file.writelines(gcode_lines)
+        gcode_filepaths.append(gcode_filepath)
+    
+    png_filepath = os.path.join(UPLOAD_FOLDER, 'output.png')
+    convert_svg_to_png(filepath, png_filepath)
+    
+    zip_filepath = os.path.join(UPLOAD_FOLDER, 'files.zip')
+    with ZipFile(zip_filepath, 'w') as zipf:
+        for gcode_filepath in gcode_filepaths:
+            zipf.write(gcode_filepath, os.path.basename(gcode_filepath))
+        zipf.write(png_filepath, os.path.basename(png_filepath))
+    
+    return zip_filepath
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
