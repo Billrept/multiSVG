@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, send_file, jsonify
 import os
+import cairosvg
 import xml.etree.ElementTree as ET
 from zipfile import ZipFile
 
@@ -28,6 +29,11 @@ def separate_svg_layers(svg_file):
         layer_paths.append((layer_id, layer_path))
     
     return layer_paths
+
+def convert_svg_to_png(filepath):
+    png_filepath = filepath.rsplit('.', 1)[0] + '.png'
+    cairosvg.svg2png(url=filepath, write_to=png_filepath)
+    return png_filepath
 
 def convert_svg_to_gcode(filepath, color):
     tree = ET.parse(filepath)
@@ -63,18 +69,23 @@ def process_svg_to_gcode(file):
     layers = separate_svg_layers(filepath)
     
     gcode_filepaths = []
+    png_filepaths = []
     for color, layer_path in layers:
         gcode_lines = convert_svg_to_gcode(layer_path, color)
         gcode_filepath = os.path.join(UPLOAD_FOLDER, f'{color}.gcode')
         with open(gcode_filepath, 'w') as gcode_file:
             gcode_file.writelines(gcode_lines)
         gcode_filepaths.append(gcode_filepath)
+        
+        png_filepath = convert_svg_to_png(layer_path)
+        png_filepaths.append(png_filepath)
     
     zip_filepath = os.path.join(UPLOAD_FOLDER, 'gcode_files.zip')
     with ZipFile(zip_filepath, 'w') as zipf:
         for gcode_filepath in gcode_filepaths:
             zipf.write(gcode_filepath, os.path.basename(gcode_filepath))
-    
+        for png_filepath in png_filepaths:
+            zipf.write(png_filepath, os.path.basename(png_filepath))
     return zip_filepath
 
 @app.route('/', methods=['GET', 'POST'])
