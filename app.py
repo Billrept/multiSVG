@@ -15,7 +15,7 @@ def convert_svg_to_png(svg_file, OUTPUT_PNG):
 def separate_svg_layers(svg_file):
     tree = ET.parse(svg_file)
     root = tree.getroot()
-
+    
     layers = {}
     
     for elem in root.iter():
@@ -40,7 +40,13 @@ def convert_svg_to_gcode(filepath, color):
     namespaces = {'svg': 'http://www.w3.org/2000/svg'}
     gcode_lines = []
 
-    gcode_lines.append(f"; Color: {color}\n")
+    gcode_lines.append("G00 F4500.0\n")
+    gcode_lines.append("Y0.000; !!Ybottom\n")
+    gcode_lines.append("G00 F4500.0\n")
+    gcode_lines.append("X0.000; !!Xleft\n")
+    gcode_lines.append(f"G00 F4500.0 X{0.000} Y{0.000};\n")
+    gcode_lines.append("M3 S45\n")
+
     for path in root.findall('.//svg:path', namespaces):
         d = path.attrib.get('d')
         if d:
@@ -51,44 +57,50 @@ def convert_svg_to_gcode(filepath, color):
 def path_to_gcode(path_data, color):
     gcode_lines = []
     commands = path_data.split()
-    gcode_lines.append(f"G00 F4500.0\n")
+    gcode_lines.append(f"; Start of path for color {color}\n")
 
     for command in commands:
         if command.startswith('M'):
-            x, y = command[1:].split(',')
-            gcode_lines.append(f"G00 F4500.0 X{x} Y{y}; move !!Xleft+{x} Ybottom+{y}\n")
-            gcode_lines.append("M3 S45\n")
+            coordinates = command[1:].split(',')
+            x, y = float(coordinates[0]), float(coordinates[1])
+            gcode_lines.append(f"G00 F4500.0 X{x:.3f} Y{y:.3f}; move !!Xleft+{x:.3f} Ybottom+{y:.3f}\n")
         elif command.startswith('L'):
-            x, y = command[1:].split(',')
-            gcode_lines.append(f"G01 F4200.0 X{x} Y{y}; draw !!Xleft+{x} Ybottom+{y}\n")
-
-    gcode_lines.append(f"\n")
+            coordinates = command[1:].split(',')
+            x, y = float(coordinates[0]), float(coordinates[1])
+            gcode_lines.append(f"G01 F4200.0 X{x:.3f} Y{y:.3f}; draw !!Xleft+{x:.3f} Ybottom+{y:.3f}\n")
+        else:
+            # Additional handling for other commands (e.g., Z, A) can be added here
+            pass
+    gcode_lines.append(f"; End of path for color {color}\n")
     return gcode_lines
 
 def process_svg_to_gcode(file):
-    filepath = os.path.join(UPLOAD_FOLDER, file.filename)
-    file.save(filepath)
-    
-    png_filepath = os.path.join(UPLOAD_FOLDER, f'{os.path.splitext(file.filename)[0]}.png')
-    convert_svg_to_png(filepath, png_filepath)
-    
-    layers = separate_svg_layers(filepath)
-    
-    gcode_filepaths = []
-    for color, layer_path in layers:
-        gcode_lines = convert_svg_to_gcode(layer_path, color)
-        gcode_filepath = os.path.join(UPLOAD_FOLDER, f'{color}.gcode')
-        with open(gcode_filepath, 'w') as gcode_file:
-            gcode_file.writelines(gcode_lines)
-        gcode_filepaths.append(gcode_filepath)
-
-    zip_filepath = os.path.join(UPLOAD_FOLDER, 'files.zip')
-    with ZipFile(zip_filepath, 'w') as zipf:
-        zipf.write(filepath, os.path.basename(filepath))
-        zipf.write(png_filepath, os.path.basename(png_filepath))
-        for gcode_filepath in gcode_filepaths:
-            zipf.write(gcode_filepath, os.path.basename(gcode_filepath))
-    return zip_filepath
+    try:
+        filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+        file.save(filepath)
+        layers = separate_svg_layers(filepath)
+        
+        gcode_filepaths = []
+        for color, layer_path in layers:
+            gcode_lines = convert_svg_to_gcode(layer_path, color)
+            gcode_filepath = os.path.join(UPLOAD_FOLDER, f'{color}.gcode')
+            with open(gcode_filepath, 'w') as gcode_file:
+                gcode_file.writelines(gcode_lines)
+            gcode_filepaths.append(gcode_filepath)
+        
+        png_filepath = os.path.join(UPLOAD_FOLDER, 'output.png')
+        convert_svg_to_png(filepath, png_filepath)
+        
+        zip_filepath = os.path.join(UPLOAD_FOLDER, 'files.zip')
+        with ZipFile(zip_filepath, 'w') as zipf:
+            for gcode_filepath in gcode_filepaths:
+                zipf.write(gcode_filepath, os.path.basename(gcode_filepath))
+            zipf.write(png_filepath, os.path.basename(png_filepath))
+        
+        return zip_filepath
+    except Exception as e:
+        app.logger.error(f"Error processing SVG to G-code: {e}")
+        return None
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -99,12 +111,19 @@ def index():
         if file.filename == '':
             return "No selected file", 400
         zip_filepath = process_svg_to_gcode(file)
-        return jsonify({'success': True, 'download_url_zip': f'/download/{os.path.basename(zip_filepath)}'})
+        if zip_filepath:
+            return jsonify({'success': True, 'download_url': f'/download/{os.path.basename(zip_filepath)}'})
+        else:
+            return jsonify({'success': False, 'message': 'Error processing the file'}), 500
     return render_template('index.html')
 
 @app.route('/download/<filename>')
 def download_file(filename):
-    return send_file(os.path.join(UPLOAD_FOLDER, filename), as_attachment=True)
+    try:
+        return send_file(os.path.join(UPLOAD_FOLDER, filename), as_attachment=True)
+    except Exception as e:
+        app.logger.error(f"Error sending file {filename}: {e}")
+        return "Error sending file", 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
