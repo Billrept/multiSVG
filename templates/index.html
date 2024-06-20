@@ -97,12 +97,12 @@
                             $('#download-button-container').show();
                             $('#download-button').attr('href', response.download_url);
                         } else {
-                            alert('Error converting SVG to G-code. Please try again.');
+                            alert(response.message || 'Error converting SVG to G-code. Please try again.');
                         }
                     },
-                    error: function() {
+                    error: function(xhr, status, error) {
                         $('#processing-indicator-container').hide();
-                        alert('Error uploading file. Please try again.');
+                        alert(xhr.responseJSON?.message || 'Error uploading file. Please try again.');
                     }
                 });
             });

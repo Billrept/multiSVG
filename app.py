@@ -71,9 +71,7 @@ def path_to_gcode(path_data, color):
             elif command == 'L':
                 x, y = map(float, coordinates)
                 gcode_lines.append(f"G01 F4200.0 X{x:.3f} Y{y:.3f}; draw !!Xleft+{x:.3f} Ybottom+{y:.3f}\n")
-            # Add handling for other SVG commands like C (curve) if needed
             else:
-                # Handle unknown or unsupported commands gracefully
                 gcode_lines.append(f"; Unsupported command {command} with coordinates {item}\n")
     gcode_lines.append(f"; End of path for color {color}\n")
     return gcode_lines
@@ -110,14 +108,17 @@ def process_svg_to_gcode(file):
 def index():
     if request.method == 'POST':
         if 'svg_file' not in request.files:
-            return "No file part", 400
+            app.logger.error("No file part")
+            return jsonify({'success': False, 'message': 'No file part'}), 400
         file = request.files['svg_file']
         if file.filename == '':
-            return "No selected file", 400
+            app.logger.error("No selected file")
+            return jsonify({'success': False, 'message': 'No selected file'}), 400
         zip_filepath = process_svg_to_gcode(file)
         if zip_filepath:
             return jsonify({'success': True, 'download_url': f'/download/{os.path.basename(zip_filepath)}'})
         else:
+            app.logger.error("Error processing the file")
             return jsonify({'success': False, 'message': 'Error processing the file'}), 500
     return render_template('index.html')
 
