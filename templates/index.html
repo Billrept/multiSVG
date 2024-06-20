@@ -95,7 +95,7 @@
                         $('#processing-indicator-container').hide();
                         if (response.success) {
                             $('#download-button-container').show();
-                            $('#download-button').attr('href', response.download_url_zip);
+                            $('#download-button').attr('href', response.download_url);
                         } else {
                             alert('Error converting SVG to G-code. Please try again.');
                         }
