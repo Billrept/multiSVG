@@ -15,7 +15,7 @@ def convert_svg_to_png(svg_file, OUTPUT_PNG):
 def separate_svg_layers(svg_file):
     tree = ET.parse(svg_file)
     root = tree.getroot()
-    
+
     layers = {}
     
     for elem in root.iter():
@@ -51,15 +51,18 @@ def convert_svg_to_gcode(filepath, color):
 def path_to_gcode(path_data, color):
     gcode_lines = []
     commands = path_data.split()
-    gcode_lines.append(f"; Start of path for color {color}\n")
+    gcode_lines.append(f"G00 F4500.0\n")
+
     for command in commands:
         if command.startswith('M'):
-            gcode_lines.append(f"G0 {command[1:]}\n")
+            x, y = command[1:].split(',')
+            gcode_lines.append(f"G00 F4500.0 X{x} Y{y}; move !!Xleft+{x} Ybottom+{y}\n")
+            gcode_lines.append("M3 S45\n")
         elif command.startswith('L'):
             x, y = command[1:].split(',')
-            gcode_lines.append(f"; Move to X{x} Y{y}\n")
-            gcode_lines.append(f"G1 X{x} Y{y}\n")
-    gcode_lines.append(f"; End of path for color {color}\n")
+            gcode_lines.append(f"G01 F4200.0 X{x} Y{y}; draw !!Xleft+{x} Ybottom+{y}\n")
+
+    gcode_lines.append(f"\n")
     return gcode_lines
 
 def process_svg_to_gcode(file):
