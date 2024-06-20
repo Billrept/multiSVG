@@ -40,13 +40,7 @@ def convert_svg_to_gcode(filepath, color):
     namespaces = {'svg': 'http://www.w3.org/2000/svg'}
     gcode_lines = []
 
-    gcode_lines.append("G00 F4500.0\n")
-    gcode_lines.append("Y0.000; !!Ybottom\n")
-    gcode_lines.append("G00 F4500.0\n")
-    gcode_lines.append("X0.000; !!Xleft\n")
-    gcode_lines.append(f"G00 F4500.0 X0.000 Y0.000;\n")
-    gcode_lines.append("M3 S45\n")
-
+    gcode_lines.append(f"; Color: {color}\n")
     for path in root.findall('.//svg:path', namespaces):
         d = path.attrib.get('d')
         if d:
@@ -56,27 +50,15 @@ def convert_svg_to_gcode(filepath, color):
 
 def path_to_gcode(path_data, color):
     gcode_lines = []
-    commands = path_data.replace(',', ' ').split()
+    commands = path_data.split()
     gcode_lines.append(f"; Start of path for color {color}\n")
-
-    current_command = None
-    for item in commands:
-        if item in 'MLC':
-            current_command = item
-        else:
-            coordinates = list(map(float, item.split()))
-            if current_command == 'M':
-                x, y = coordinates
-                gcode_lines.append(f"G00 X{x:.3f} Y{y:.3f}; move !!Xleft+{x:.3f} Ybottom+{y:.3f}\n")
-            elif current_command == 'L':
-                x, y = coordinates
-                gcode_lines.append(f"G01 X{x:.3f} Y{y:.3f}; draw !!Xleft+{x:.3f} Ybottom+{y:.3f}\n")
-            elif current_command == 'C':
-                # Handle cubic Bezier curve (simplified example)
-                x1, y1, x2, y2, x, y = coordinates
-                gcode_lines.append(f"G01 X{x1:.3f} Y{y1:.3f}; draw !!Xleft+{x1:.3f} Ybottom+{y1:.3f}\n")
-                gcode_lines.append(f"G01 X{x2:.3f} Y{y2:.3f}; draw !!Xleft+{x2:.3f} Ybottom+{y2:.3f}\n")
-                gcode_lines.append(f"G01 X{x:.3f} Y{y:.3f}; draw !!Xleft+{x:.3f} Ybottom+{y:.3f}\n")
+    for command in commands:
+        if command.startswith('M'):
+            gcode_lines.append(f"G0 {command[1:]}\n")
+        elif command.startswith('L'):
+            x, y = command[1:].split(',')
+            gcode_lines.append(f"; Move to X{x} Y{y}\n")
+            gcode_lines.append(f"G1 X{x} Y{y}\n")
     gcode_lines.append(f"; End of path for color {color}\n")
     return gcode_lines
 
@@ -112,17 +94,14 @@ def process_svg_to_gcode(file):
 def index():
     if request.method == 'POST':
         if 'svg_file' not in request.files:
-            app.logger.error("No file part")
-            return jsonify({'success': False, 'message': 'No file part'}), 400
+            return "No file part", 400
         file = request.files['svg_file']
         if file.filename == '':
-            app.logger.error("No selected file")
-            return jsonify({'success': False, 'message': 'No selected file'}), 400
+            return "No selected file", 400
         zip_filepath = process_svg_to_gcode(file)
         if zip_filepath:
             return jsonify({'success': True, 'download_url': f'/download/{os.path.basename(zip_filepath)}'})
         else:
-            app.logger.error("Error processing the file")
             return jsonify({'success': False, 'message': 'Error processing the file'}), 500
     return render_template('index.html')
 
