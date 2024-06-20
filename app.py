@@ -56,21 +56,25 @@ def convert_svg_to_gcode(filepath, color):
 
 def path_to_gcode(path_data, color):
     gcode_lines = []
-    commands = path_data.split()
+    commands = path_data.replace(',', ' ').split()
     gcode_lines.append(f"; Start of path for color {color}\n")
 
-    for command in commands:
-        if command.startswith('M'):
-            coordinates = command[1:].split(',')
-            x, y = float(coordinates[0]), float(coordinates[1])
-            gcode_lines.append(f"G00 F4500.0 X{x:.3f} Y{y:.3f}; move !!Xleft+{x:.3f} Ybottom+{y:.3f}\n")
-        elif command.startswith('L'):
-            coordinates = command[1:].split(',')
-            x, y = float(coordinates[0]), float(coordinates[1])
-            gcode_lines.append(f"G01 F4200.0 X{x:.3f} Y{y:.3f}; draw !!Xleft+{x:.3f} Ybottom+{y:.3f}\n")
+    command = None
+    for item in commands:
+        if item in 'MLC':
+            command = item
         else:
-            # Additional handling for other commands (e.g., Z, A) can be added here
-            pass
+            coordinates = item.split()
+            if command == 'M':
+                x, y = map(float, coordinates)
+                gcode_lines.append(f"G00 F4500.0 X{x:.3f} Y{y:.3f}; move !!Xleft+{x:.3f} Ybottom+{y:.3f}\n")
+            elif command == 'L':
+                x, y = map(float, coordinates)
+                gcode_lines.append(f"G01 F4200.0 X{x:.3f} Y{y:.3f}; draw !!Xleft+{x:.3f} Ybottom+{y:.3f}\n")
+            # Add handling for other SVG commands like C (curve) if needed
+            else:
+                # Handle unknown or unsupported commands gracefully
+                gcode_lines.append(f"; Unsupported command {command} with coordinates {item}\n")
     gcode_lines.append(f"; End of path for color {color}\n")
     return gcode_lines
 
