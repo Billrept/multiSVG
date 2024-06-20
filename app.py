@@ -44,7 +44,7 @@ def convert_svg_to_gcode(filepath, color):
     gcode_lines.append("Y0.000; !!Ybottom\n")
     gcode_lines.append("G00 F4500.0\n")
     gcode_lines.append("X0.000; !!Xleft\n")
-    gcode_lines.append(f"G00 F4500.0 X{0.000} Y{0.000};\n")
+    gcode_lines.append(f"G00 F4500.0 X0.000 Y0.000;\n")
     gcode_lines.append("M3 S45\n")
 
     for path in root.findall('.//svg:path', namespaces):
@@ -59,20 +59,24 @@ def path_to_gcode(path_data, color):
     commands = path_data.replace(',', ' ').split()
     gcode_lines.append(f"; Start of path for color {color}\n")
 
-    command = None
+    current_command = None
     for item in commands:
         if item in 'MLC':
-            command = item
+            current_command = item
         else:
-            coordinates = item.split()
-            if command == 'M':
-                x, y = map(float, coordinates)
-                gcode_lines.append(f"G00 F4500.0 X{x:.3f} Y{y:.3f}; move !!Xleft+{x:.3f} Ybottom+{y:.3f}\n")
-            elif command == 'L':
-                x, y = map(float, coordinates)
-                gcode_lines.append(f"G01 F4200.0 X{x:.3f} Y{y:.3f}; draw !!Xleft+{x:.3f} Ybottom+{y:.3f}\n")
-            else:
-                gcode_lines.append(f"; Unsupported command {command} with coordinates {item}\n")
+            coordinates = list(map(float, item.split()))
+            if current_command == 'M':
+                x, y = coordinates
+                gcode_lines.append(f"G00 X{x:.3f} Y{y:.3f}; move !!Xleft+{x:.3f} Ybottom+{y:.3f}\n")
+            elif current_command == 'L':
+                x, y = coordinates
+                gcode_lines.append(f"G01 X{x:.3f} Y{y:.3f}; draw !!Xleft+{x:.3f} Ybottom+{y:.3f}\n")
+            elif current_command == 'C':
+                # Handle cubic Bezier curve (simplified example)
+                x1, y1, x2, y2, x, y = coordinates
+                gcode_lines.append(f"G01 X{x1:.3f} Y{y1:.3f}; draw !!Xleft+{x1:.3f} Ybottom+{y1:.3f}\n")
+                gcode_lines.append(f"G01 X{x2:.3f} Y{y2:.3f}; draw !!Xleft+{x2:.3f} Ybottom+{y2:.3f}\n")
+                gcode_lines.append(f"G01 X{x:.3f} Y{y:.3f}; draw !!Xleft+{x:.3f} Ybottom+{y:.3f}\n")
     gcode_lines.append(f"; End of path for color {color}\n")
     return gcode_lines
 
