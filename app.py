@@ -1,105 +1,108 @@
 from flask import Flask, render_template, request, send_file, jsonify
 import os
-import xml.etree.ElementTree as ET
-from zipfile import ZipFile
 import cairosvg
+from svg_to_gcode.svg_parser import parse_file
+from svg_to_gcode.compiler import Compiler, interfaces
+from zipfile import ZipFile
+from werkzeug.utils import secure_filename
+from xml.etree import ElementTree as ET
 
 app = Flask(__name__)
 UPLOAD_FOLDER = 'static/uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-def convert_svg_to_png(svg_file, OUTPUT_PNG):
-    cairosvg.svg2png(url=svg_file, write_to=OUTPUT_PNG)
-    return OUTPUT_PNG
+class CustomGcode(interfaces.Gcode):
+    def __init__(self, color):
+        super().__init__()
+        self.color = color
 
-def separate_svg_layers(svg_file):
-    tree = ET.parse(svg_file)
-    root = tree.getroot()
-    
-    layers = {}
-    
-    for elem in root.iter():
-        if 'id' in elem.attrib:
-            elem_id = elem.attrib['id']
-            if elem_id not in layers:
-                layers[elem_id] = ET.Element('svg', attrib={'xmlns': 'http://www.w3.org/2000/svg'})
-            layers[elem_id].append(elem)
-    
-    layer_paths = []
-    for layer_id, layer_root in layers.items():
-        layer_path = os.path.join(UPLOAD_FOLDER, f'{layer_id}.svg')
-        layer_tree = ET.ElementTree(layer_root)
-        layer_tree.write(layer_path, encoding='utf-8', xml_declaration=True)
-        layer_paths.append((layer_id, layer_path))
-    
-    return layer_paths
+    def start(self):
+        return f"; Start of {self.color} layer\n" + super().start()
 
-def convert_svg_to_gcode(filepath, color):
-    tree = ET.parse(filepath)
-    root = tree.getroot()
-    namespaces = {'svg': 'http://www.w3.org/2000/svg'}
-    gcode_lines = []
+    def end(self):
+        return super().end() + f"\n; End of {self.color} layer"
 
-    gcode_lines.append(f"; Color: {color}\n")
-    for path in root.findall('.//svg:path', namespaces):
-        d = path.attrib.get('d')
-        if d:
-            gcode_lines.extend(path_to_gcode(d, color))
-    gcode_lines.append("\n")
-    return gcode_lines
-
-def path_to_gcode(path_data, color):
-    gcode_lines = []
-    commands = path_data.split()
-    gcode_lines.append(f"; Start of path for color {color}\n")
-    for command in commands:
-        if command.startswith('M'):
-            gcode_lines.append(f"G0 {command[1:]}\n")
-        elif command.startswith('L'):
-            x, y = command[1:].split(',')
-            gcode_lines.append(f"; Move to X{x} Y{y}\n")
-            gcode_lines.append(f"G1 X{x} Y{y}\n")
-    gcode_lines.append(f"; End of path for color {color}\n")
-    return gcode_lines
-
-def process_svg_to_gcode(file):
+def convert_svg_to_gcode(svg_path, color, laser_power, speed, pass_depth):
     try:
-        filepath = os.path.join(UPLOAD_FOLDER, file.filename)
-        file.save(filepath)
-        layers = separate_svg_layers(filepath)
-        
-        gcode_filepaths = []
-        for color, layer_path in layers:
-            gcode_lines = convert_svg_to_gcode(layer_path, color)
-            gcode_filepath = os.path.join(UPLOAD_FOLDER, f'{color}.gcode')
-            with open(gcode_filepath, 'w') as gcode_file:
-                gcode_file.writelines(gcode_lines)
-            gcode_filepaths.append(gcode_filepath)
-        
-        png_filepath = os.path.join(UPLOAD_FOLDER, 'output.png')
-        convert_svg_to_png(filepath, png_filepath)
-        
-        zip_filepath = os.path.join(UPLOAD_FOLDER, 'files.zip')
-        with ZipFile(zip_filepath, 'w') as zipf:
-            for gcode_filepath in gcode_filepaths:
-                zipf.write(gcode_filepath, os.path.basename(gcode_filepath))
-            zipf.write(png_filepath, os.path.basename(png_filepath))
-        
-        return zip_filepath
+        curves = parse_file(svg_path)
+        gcode_compiler = Compiler(lambda: CustomGcode(color), movement_speed=speed, cutting_speed=laser_power, pass_depth=pass_depth)
+        gcode_compiler.append_curves(curves)
+        gcode_filepath = os.path.join(UPLOAD_FOLDER, f"{color}.gcode")
+        gcode_compiler.compile_to_file(gcode_filepath)
+        return gcode_filepath
     except Exception as e:
         app.logger.error(f"Error processing SVG to G-code: {e}")
         return None
+
+def convert_svg_to_png(svg_path, color):
+    png_filepath = os.path.join(UPLOAD_FOLDER, f"{color}.png")
+    cairosvg.svg2png(url=svg_path, write_to=png_filepath)
+    return png_filepath
+
+def split_svg_by_color(svg_path):
+    tree = ET.parse(svg_path)
+    root = tree.getroot()
+    svg_ns = {'svg': 'http://www.w3.org/2000/svg'}
+    layers = {
+        'black': ET.Element('svg', root.attrib),
+        'yellow': ET.Element('svg', root.attrib),
+        'cyan': ET.Element('svg', root.attrib),
+        'magenta': ET.Element('svg', root.attrib)
+    }
+
+    for layer in layers.values():
+        layer.set('xmlns', svg_ns['svg'])
+
+    for element in root.findall('.//svg:path', namespaces=svg_ns):
+        color = element.attrib.get('id')
+        if color in layers:
+            layers[color].append(element)
+
+    svg_layers = {}
+    for color, layer in layers.items():
+        layer_tree = ET.ElementTree(layer)
+        layer_path = os.path.join(UPLOAD_FOLDER, f"{color}.svg")
+        layer_tree.write(layer_path, encoding='unicode', xml_declaration=True)
+        svg_layers[color] = layer_path
+
+    return svg_layers
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
         if 'svg_file' not in request.files:
-            return "No file part", 400
+            return jsonify({'success': False, 'message': 'No file part'}), 400
         file = request.files['svg_file']
         if file.filename == '':
-            return "No selected file", 400
-        zip_filepath = process_svg_to_gcode(file)
-        if zip_filepath:
+            return jsonify({'success': False, 'message': 'No selected file'}), 400
+
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(filepath)
+
+        laser_power = int(request.form.get('laser_power', 1000))
+        speed = int(request.form.get('speed', 900))
+        pass_depth = int(request.form.get('pass_depth', 5))
+
+        svg_layers = split_svg_by_color(filepath)
+        gcode_files = []
+        png_files = []
+        for color, svg_path in svg_layers.items():
+            gcode_file = convert_svg_to_gcode(svg_path, color, laser_power, speed, pass_depth)
+            png_file = convert_svg_to_png(svg_path, color)
+            if gcode_file:
+                gcode_files.append(gcode_file)
+            if png_file:
+                png_files.append(png_file)
+
+        if gcode_files and png_files:
+            zip_filepath = os.path.join(UPLOAD_FOLDER, 'files.zip')
+            with ZipFile(zip_filepath, 'w') as zipf:
+                for gcode_file in gcode_files:
+                    zipf.write(gcode_file, os.path.basename(gcode_file))
+                for png_file in png_files:
+                    zipf.write(png_file, os.path.basename(png_file))
+
             return jsonify({'success': True, 'download_url': f'/download/{os.path.basename(zip_filepath)}'})
         else:
             return jsonify({'success': False, 'message': 'Error processing the file'}), 500
