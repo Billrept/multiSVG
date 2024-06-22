@@ -25,7 +25,7 @@ class CustomGcode(interfaces.Gcode):
 def convert_svg_to_gcode(svg_path, color, laser_power, speed, pass_depth):
     try:
         curves = parse_file(svg_path)
-        gcode_compiler = Compiler(lambda: CustomGcode(color), movement_speed=speed, cutting_speed=laser_power, pass_depth=pass_depth)
+        gcode_compiler = Compiler(CustomGcode(color), movement_speed=speed, cutting_speed=laser_power, pass_depth=pass_depth)
         gcode_compiler.append_curves(curves)
         gcode_filepath = os.path.join(UPLOAD_FOLDER, f"{color}.gcode")
         gcode_compiler.compile_to_file(gcode_filepath)
@@ -34,8 +34,8 @@ def convert_svg_to_gcode(svg_path, color, laser_power, speed, pass_depth):
         app.logger.error(f"Error processing SVG to G-code: {e}")
         return None
 
-def convert_svg_to_png(svg_path, color):
-    png_filepath = os.path.join(UPLOAD_FOLDER, f"{color}.png")
+def convert_svg_to_png(svg_path):
+    png_filepath = os.path.join(UPLOAD_FOLDER, 'original.png')
     cairosvg.svg2png(url=svg_path, write_to=png_filepath)
     return png_filepath
 
@@ -84,24 +84,20 @@ def index():
         speed = int(request.form.get('speed', 900))
         pass_depth = int(request.form.get('pass_depth', 5))
 
+        png_file = convert_svg_to_png(filepath)
         svg_layers = split_svg_by_color(filepath)
         gcode_files = []
-        png_files = []
         for color, svg_path in svg_layers.items():
             gcode_file = convert_svg_to_gcode(svg_path, color, laser_power, speed, pass_depth)
-            png_file = convert_svg_to_png(svg_path, color)
             if gcode_file:
                 gcode_files.append(gcode_file)
-            if png_file:
-                png_files.append(png_file)
 
-        if gcode_files and png_files:
+        if gcode_files:
             zip_filepath = os.path.join(UPLOAD_FOLDER, 'files.zip')
             with ZipFile(zip_filepath, 'w') as zipf:
+                zipf.write(png_file, os.path.basename(png_file))
                 for gcode_file in gcode_files:
                     zipf.write(gcode_file, os.path.basename(gcode_file))
-                for png_file in png_files:
-                    zipf.write(png_file, os.path.basename(png_file))
 
             return jsonify({'success': True, 'download_url': f'/download/{os.path.basename(zip_filepath)}'})
         else:
@@ -117,4 +113,4 @@ def download_file(filename):
         return "Error sending file", 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(debug=True)
