@@ -25,7 +25,7 @@ class CustomGcode(interfaces.Gcode):
 def convert_svg_to_gcode(svg_path, color, laser_power, speed, pass_depth):
     try:
         curves = parse_file(svg_path)
-        gcode_compiler = Compiler(CustomGcode(color), movement_speed=speed, cutting_speed=laser_power, pass_depth=pass_depth)
+        gcode_compiler = Compiler(lambda: CustomGcode(color), movement_speed=speed, cutting_speed=laser_power, pass_depth=pass_depth)
         gcode_compiler.append_curves(curves)
         gcode_filepath = os.path.join(UPLOAD_FOLDER, f"{color}.gcode")
         gcode_compiler.compile_to_file(gcode_filepath)
@@ -80,28 +80,40 @@ def index():
         filepath = os.path.join(UPLOAD_FOLDER, filename)
         file.save(filepath)
 
+        mode = request.form.get('mode')
         laser_power = int(request.form.get('laser_power', 1000))
         speed = int(request.form.get('speed', 900))
         pass_depth = int(request.form.get('pass_depth', 5))
 
-        png_file = convert_svg_to_png(filepath)
-        svg_layers = split_svg_by_color(filepath)
-        gcode_files = []
-        for color, svg_path in svg_layers.items():
-            gcode_file = convert_svg_to_gcode(svg_path, color, laser_power, speed, pass_depth)
+        if mode == 'drilling':
+            gcode_file = convert_svg_to_gcode(filepath, 'drilling', laser_power, speed, pass_depth)
+            png_file = convert_svg_to_png(filepath)
             if gcode_file:
-                gcode_files.append(gcode_file)
-
-        if gcode_files:
-            zip_filepath = os.path.join(UPLOAD_FOLDER, 'files.zip')
-            with ZipFile(zip_filepath, 'w') as zipf:
-                zipf.write(png_file, os.path.basename(png_file))
-                for gcode_file in gcode_files:
+                zip_filepath = os.path.join(UPLOAD_FOLDER, 'files.zip')
+                with ZipFile(zip_filepath, 'w') as zipf:
+                    zipf.write(png_file, os.path.basename(png_file))
                     zipf.write(gcode_file, os.path.basename(gcode_file))
+                return jsonify({'success': True, 'download_url': f'/download/{os.path.basename(zip_filepath)}'})
+            else:
+                return jsonify({'success': False, 'message': 'Error processing the file'}), 500
+        elif mode == 'drawing':
+            png_file = convert_svg_to_png(filepath)
+            svg_layers = split_svg_by_color(filepath)
+            gcode_files = []
+            for color, svg_path in svg_layers.items():
+                gcode_file = convert_svg_to_gcode(svg_path, color, laser_power, speed, pass_depth)
+                if gcode_file:
+                    gcode_files.append(gcode_file)
 
-            return jsonify({'success': True, 'download_url': f'/download/{os.path.basename(zip_filepath)}'})
-        else:
-            return jsonify({'success': False, 'message': 'Error processing the file'}), 500
+            if gcode_files:
+                zip_filepath = os.path.join(UPLOAD_FOLDER, 'files.zip')
+                with ZipFile(zip_filepath, 'w') as zipf:
+                    zipf.write(png_file, os.path.basename(png_file))
+                    for gcode_file in gcode_files:
+                        zipf.write(gcode_file, os.path.basename(gcode_file))
+                return jsonify({'success': True, 'download_url': f'/download/{os.path.basename(zip_filepath)}'})
+            else:
+                return jsonify({'success': False, 'message': 'Error processing the file'}), 500
     return render_template('index.html')
 
 @app.route('/download/<filename>')
@@ -113,4 +125,4 @@ def download_file(filename):
         return "Error sending file", 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000)
